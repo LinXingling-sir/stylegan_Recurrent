@@ -1,0 +1,25 @@
+dataset:
+  root: '.\dataset'
+  img_size: 32
+  batch_size: 32
+  num_workers: 4
+  img_channels: 3
+
+model:
+  z_dim: 256
+  w_dim: 256
+  num_classes: 26
+train:
+  epochs: 100
+  gen_lr: 0.0025
+  disc_lr: 0.001
+  betas: [0.0, 0.99]
+  save_dir: 'experiments'
+  save_interval: 1
+  lr_step: 30
+  lr_gamma: 0.1
+  update_emas: False
+  truncation_psi: 1
+  r1_gamma: 1.8
+  r1_ssim: 0.3
+  resume: ""
