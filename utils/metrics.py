@@ -1,3 +1,5 @@
+import math
+
 from skimage.metrics import structural_similarity
 
 
@@ -23,3 +25,13 @@ def compute_ssim(image_outputs, image_sources):
         )
         ssim_list.append(ssim)
     return sum(ssim_list) / length
+
+def compute_psnr(mse):
+    """
+    PSNR
+    """
+    # Results
+    if mse == 0:
+        return 100
+    else:
+        return 20 * math.log10(255.0 / math.sqrt(mse))

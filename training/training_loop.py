@@ -1,51 +1,49 @@
 import torch
 from torch import nn, optim
-from torch.utils.data import DataLoader
-from torchvision import transforms, datasets, utils
+from torchvision import utils
 from tqdm import tqdm
 from pathlib import Path
 import time
 import logging
 from torch.nn import functional as F
-
-from model.Discriminator import Discriminator
-from model.stylegan2 import Generator
 from training.loss import StyleGAN2Loss
-from training.utils import compute_ssim
+from utils.dataloader import get_dataloader
+from utils.init import init_generator, init_discriminator, init_model, init_schedulers, init_optimizers, \
+    device_initializer, seed_initializer, amp_initializer
+from utils.metrics import compute_ssim
 
 LOGGER = logging.getLogger(__name__)
 
 
 class GANTrainer:
-    def __init__(self, config, device):
-
+    def __init__(self, config):
 
         self.config = config
-        self.device = device
+        self.device = device_initializer()
         # 初始化配置
         self._init_config()
+        seed_initializer()
         # 初始化组件
-        self.train_loader = self._get_dataloader()
-        self.gen, self.disc = self._init_models()
-        self.opt_gen, self.opt_disc = self._init_optimizers()
-        self.scheduler_gen, self.scheduler_disc = self._init_schedulers()
+        self.train_loader = get_dataloader(config)
+        self.gen = init_generator(config, self.device)
+        self.disc = init_discriminator(config, self.device)
+        init_model(self.gen, self.disc, config)
+        self.opt_gen, self.opt_disc = init_optimizers(config, self.gen, self.disc)
+        self.scheduler_gen, self.scheduler_disc = init_schedulers(config, self.opt_gen, self.opt_disc)
         self.criterion = self._get_loss()
-        # 训练状态
-        self.current_epoch = 0
-        self.avg_ssim = 0
         # 初始化固定噪声
         self._init_fixed_noise()
         # 恢复训练
         self._resume_checkpoint()
+        # 训练状态
+        self.current_epoch = 0
+        self.avg_ssim = 0
+        self.best_ssim = 0
 
     def _init_config(self):
         """解析配置文件"""
         # 数据配置
         data_cfg = self.config.dataset
-        self.data_dir = data_cfg.root
-        self.img_size = data_cfg.img_size
-        self.batch_size = data_cfg.batch_size
-        self.num_workers = data_cfg.num_workers
         self.img_channels = data_cfg.img_channels
 
         # 模型配置
@@ -69,87 +67,9 @@ class GANTrainer:
         # 创建保存目录
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_dataloader(self) -> DataLoader:
-        """创建数据加载器"""
-        transform = transforms.Compose([
-            transforms.Resize(self.img_size),
-            transforms.ToTensor(),
-            transforms.Normalize([0.5] * 3, [0.5] * 3)
-        ])
-
-        dataset = datasets.ImageFolder(
-            root=self.data_dir,
-            transform=transform
-        )
-
-        return DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=True
-        )
-
-    def _init_models(self) -> tuple[nn.Module, nn.Module]:
-        """初始化生成器和判别器"""
-        gen = Generator(
-            z_dim=self.z_dim,
-            c_dim=self.num_classes,
-            w_dim=self.w_dim,
-            img_resolution=self.img_size,
-            img_channels=self.img_channels
-        ).to(self.device)
-
-        disc = Discriminator(
-            c_dim=self.num_classes,
-            img_resolution=self.img_size,
-            img_channels=self.img_channels
-        ).to(self.device)
-
-        # 加载预训练权重
-        if self.config.model.get("gen_weights"):
-            gen.load_state_dict(torch.load(self.config.model.gen_weights))
-        if self.config.model.get("disc_weights"):
-            disc.load_state_dict(torch.load(self.config.model.disc_weights))
-        self.pl_mean = torch.zeros([], device=self.device)
-        return gen, disc
-
-    def _init_optimizers(self) -> tuple[optim.Optimizer, optim.Optimizer]:
-        """初始化优化器"""
-        opt_gen = optim.Adam(
-            self.gen.parameters(),
-            lr=self.gen_lr,
-            betas=self.betas,
-            eps=1e-8,
-        )
-
-        opt_disc = optim.Adam(
-            self.disc.parameters(),
-            lr=self.disc_lr,
-            betas=self.betas,
-            eps=1e-8,
-        )
-        self.best_ssim = 0
-        return opt_gen, opt_disc
-
-    def _init_schedulers(self):
-        """初始化学习率调度器"""
-        scheduler_gen = optim.lr_scheduler.StepLR(
-            self.opt_gen,
-            step_size=self.config.train.lr_step,
-            gamma=self.config.train.lr_gamma
-        )
-
-        scheduler_disc = optim.lr_scheduler.StepLR(
-            self.opt_disc,
-            step_size=self.config.train.lr_step,
-            gamma=self.config.train.lr_gamma
-        )
-
-        return scheduler_gen, scheduler_disc
 
     def _get_loss(self):
-        scaler = torch.cuda.amp.GradScaler(enabled=self.device.type != "cpu")
+        scaler = amp_initializer(amp=(self.device.type != "cpu"), device=self.device)
         """获取损失函数"""
         return StyleGAN2Loss(self.device, self.gen, self.disc, scaler, self.r1_gamma)
 
@@ -177,7 +97,7 @@ class GANTrainer:
     def train(self):
         """主训练循环"""
         try:
-            LOGGER.info("Starting training...")
+            print("Starting training...")
             start_time = time.time()
 
             for epoch in range(self.current_epoch, self.epochs):
@@ -187,10 +107,10 @@ class GANTrainer:
                 self._evaluate(epoch)
                 # 更新学习率
 
-            LOGGER.info(f"Training completed in {(time.time() - start_time) / 3600:.2f} hours")
+            print(f"Training completed in {(time.time() - start_time) / 3600:.2f} hours")
 
         except Exception as e:
-            LOGGER.error(f"Training failed: {str(e)}")
+            print(f"Training failed: {str(e)}")
             raise
         finally:
             torch.cuda.empty_cache()

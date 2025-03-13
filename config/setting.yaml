@@ -13,6 +13,7 @@ train:
   epochs: 100
   gen_lr: 0.0025
   disc_lr: 0.001
+  eps: 1e-8
   betas: [0.0, 0.99]
   save_dir: 'experiments'
   save_interval: 1
