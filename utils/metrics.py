@@ -1,6 +1,9 @@
 import math
-
+from torch.nn import functional as F
 from skimage.metrics import structural_similarity
+import lpips
+
+loss_fn = lpips.LPIPS(net='vgg', verbose=False).to("cuda:0")
 
 
 def compute_ssim(image_outputs, image_sources):
@@ -26,6 +29,7 @@ def compute_ssim(image_outputs, image_sources):
         ssim_list.append(ssim)
     return sum(ssim_list) / length
 
+
 def compute_psnr(mse):
     """
     PSNR
@@ -35,3 +39,12 @@ def compute_psnr(mse):
         return 100
     else:
         return 20 * math.log10(255.0 / math.sqrt(mse))
+
+
+def compute_mse(real, fake):
+    return F.mse_loss(real, fake, reduction='mean')
+
+
+def compute_lpips(real, fake):
+    distance = loss_fn(real, fake)
+    return distance.mean().item()

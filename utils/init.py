@@ -66,20 +66,20 @@ def seed_initializer(seed_id=0):
 
 def init_generator(config, device):
     gen = Generator(
-        z_dim=config.model.z_dim,
-        c_dim=config.model.num_classes,
-        w_dim=config.model.w_dim,
-        img_resolution=config.dataset.img_size,
-        img_channels=config.dataset.img_channels
+        z_dim=config.z_dim,
+        c_dim=config.num_classes,
+        w_dim=config.w_dim,
+        img_resolution=config.img_size,
+        img_channels=config.img_channels
     ).to(device)
     return gen
 
 
 def init_discriminator(config, device):
     disc = Discriminator(
-        c_dim=config.model.num_classes,
-        img_resolution=config.dataset.img_size,
-        img_channels=config.dataset.img_channels
+        c_dim=config.num_classes,
+        img_resolution=config.img_size,
+        img_channels=config.img_channels
     ).to(device)
     return disc
 
@@ -98,27 +98,23 @@ def amp_initializer(amp, device):
     # Used to scale gradients to prevent overflow
     return GradScaler(enabled=amp)
 
-def init_model(gen, disc, config):
-    if config.model.get("gen_weights"):
-        gen.load_state_dict(torch.load(config.model.gen_weights))
-    if config.model.get("disc_weights"):
-        disc.load_state_dict(torch.load(config.model.disc_weights))
+
 
 
 def init_optimizers(config, gen, disc):
     """初始化优化器"""
     opt_gen = optim.Adam(
         gen.parameters(),
-        lr=config.train.gen_lr,
-        betas=tuple(config.train.betas),
-        eps=config.train.eps,
+        lr=config.gen_lr,
+        betas=tuple(config.betas),
+        eps=float(config.eps),
     )
 
     opt_disc = optim.Adam(
         disc.parameters(),
-        lr=config.train.disc_lr,
-        betas=tuple(config.train.betas),
-        eps=config.train.eps,
+        lr=config.disc_lr,
+        betas=tuple(config.betas),
+        eps=float(config.eps),
     )
     return opt_gen, opt_disc
 
@@ -127,14 +123,14 @@ def init_schedulers(config, opt_gen, opt_disc):
     """初始化学习率调度器"""
     scheduler_gen = optim.lr_scheduler.StepLR(
         opt_gen,
-        step_size=config.train.lr_step,
-        gamma=config.train.lr_gamma
+        step_size=config.lr_step,
+        gamma=config.lr_gamma
     )
 
     scheduler_disc = optim.lr_scheduler.StepLR(
         opt_disc,
-        step_size=config.train.lr_step,
-        gamma=config.train.lr_gamma
+        step_size=config.lr_step,
+        gamma=config.lr_gamma
     )
 
     return scheduler_gen, scheduler_disc
